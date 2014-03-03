@@ -1,8 +1,55 @@
 #!/bin/bash
-# Here do anything needed to install the service
-# i.e. apt-get install -y foo  or  bzr branch http://myserver/mycode /srv/webroot
-# Make sure this hook exits cleanly and is idempotent, common problems here are
-# failing to account for a debconf question on a dependency, or trying to pull
-# from github without installing git first.
 
-apt-get install -y vanilla
+set -e # If any command fails, stop execution of the hook with that error
+
+apt-get install -y apache2 php5-cgi php5-mysql curl php5-gd wget libapache2-mod-php5
+
+dl="https://github.com/vanillaforums/Garden/archive/Vanilla_2.0.18.8.tar.gz"
+
+# Grab Vanilla from upstream.
+juju-log "Fetching $dl"
+wget "$dl" -O /tmp/vanilla.tar.gz
+
+# IDEMPOTENCY is very important in all charm hooks, even the install hook.
+if [ -f /var/www/vanilla/conf/config.php ]; then
+  cp /var/www/vanilla/conf/config.php /tmp/
+  rm -rf /var/www/vanilla
+fi
+
+# Extract to a known location
+juju-log "Extracting Vanilla"
+tar -xvzf /tmp/vanilla.tar.gz -C /var/www/
+mv /var/www/Garden-Vanilla* /var/www/vanilla
+
+if [ -f /tmp/config.php ]; then
+  mv /tmp/config.php /var/www/vanilla/conf/
+fi
+
+chmod -R 777 /var/www/vanilla/conf /var/www/vanilla/uploads /var/www/vanilla/cache
+
+juju-log "Creating apache2 configuration"
+cat <<EOF > /etc/apache2/sites-available/vanilla
+<VirtualHost *:80>
+  ServerAdmin webmaster@localhost
+  DocumentRoot /var/www/vanilla
+  
+  <Directory /var/www/vanilla>
+    Options Indexes FollowSymLinks MultiViews
+    AllowOverride All
+    Order allow,deny
+    allow from all
+  </Directory>
+
+  ErrorLog \${APACHE_LOG_DIR}/vanilla.log
+  LogLevel warn
+
+  CustomLog \${APACHE_LOG_DIR}/access.log combined
+</VirtualHost>
+EOF
+
+a2dissite 000-default
+a2ensite vanilla
+
+service apache2 reload
+
+juju-log "Files extracted, waiting for other events before we do anything else!"

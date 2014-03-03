@@ -14,3 +14,6 @@ provides:
 requires:
   database:
     interface: mysql
+peers:
+  peer-relation:
+    interface: interface-name
